@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies and generated build output (Vercel builds from source)
+node_modules/
+/dist/
+/dist-ssr/
+.vite/
+*.tsbuildinfo
+
+# Local Vercel project link and downloaded environment variables
+.vercel/
+
+# Environment files: keep the non-secret setup example in Git
+*.local
+.env
+.env.*
+!.env.example
+
+# Local verification output, screenshots and temporary databases
+tmp/
+coverage/
+playwright-report/
+test-results/
+.cache/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

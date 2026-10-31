@@ -1,0 +1,51 @@
+# Source-based Vite deployment: Vercel installs and builds the app.
+# Keep src/, public/ (including fonts/licenses), index.html, package.json,
+# package-lock.json, tsconfig*.json, vite.config.ts and any vercel.json.
+
+# Installed dependencies and local build/cache output
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.cache/
+*.tsbuildinfo
+.vercel/
+
+# Local credentials and environment files (configure values in Vercel)
+.env
+.env.*
+*.local
+
+# Verification tools and results are kept in Git, but not uploaded by CLI
+scripts/
+tmp/
+coverage/
+playwright-report/
+test-results/
+docs/
+README.md
+
+# Repository metadata, agent configuration and editor files
+.git/
+.github/
+.agents/
+.codex/
+AGENTS.md
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
