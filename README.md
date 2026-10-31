@@ -62,7 +62,7 @@ EF_API_TARGET=http://127.0.0.1:8080
 VITE_API_BASE_URL=/api/v1
 ```
 
-프로덕션 정적 빌드에는 Vite 개발 프록시가 포함되지 않습니다. 호스팅 서버에서 같은 출처의 `/api`를 백엔드로 프록시하거나, `VITE_API_BASE_URL`과 서버의 허용 CORS 출처를 함께 설정해야 합니다. DB·JWT 키는 프런트 환경 변수에 넣지 않습니다.
+프로덕션 정적 빌드에는 Vite 개발 프록시가 포함되지 않습니다. 이 프로젝트의 `vercel.json`은 `/api/:path*`를 `https://my-expression-friend-api.onrender.com/api/:path*`로 전달하고 API 응답에 `Cache-Control: no-store`를 설정합니다. Vercel 환경변수는 `VITE_API_BASE_URL=/api/v1`로 지정한 뒤 재배포합니다. 브라우저가 프론트와 같은 출처로 요청하므로 현재 CORS 비활성 백엔드와 연결할 수 있습니다. Render 직접 주소를 `VITE_API_BASE_URL`에 넣으면 이 프록시를 사용하지 않으므로 별도 CORS 허용이 필요합니다. 백엔드 호스트가 바뀌면 `vercel.json`의 destination도 변경합니다. DB·JWT 키는 프런트 환경 변수에 넣지 않습니다.
 
 ### 로그인 상태 유지
 
