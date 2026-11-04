@@ -8,12 +8,12 @@ import { ResourceState } from './shared'
 import { useResource } from './useResource'
 
 export function ConsentsPage({ id }: { id: string }) {
-  const load = useCallback(() => loadConsents(id), [id])
+  const load = useCallback((signal: AbortSignal) => loadConsents(id, signal), [id])
   const resource = useResource(load)
   const [selection, setSelection] = useState<{ notice: Notice; granted: boolean } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   return <>
-    <PageHeader title={resource.data ? `${resource.data.child.pseudonym}의 정보 사용 동의` : '정보 사용 동의'} description="목적별로 안내를 확인한 뒤 각각 선택할 수 있습니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => { setSelection(null); void resource.reload() }}>동의 상태 확인</Button>} />
+    <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 정보 사용 동의` : '정보 사용 동의'} description="목적별로 안내를 확인한 뒤 각각 선택할 수 있습니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => { setSelection(null); void resource.reload() }}>동의 상태 확인</Button>} />
     {message && <div className="section-notice"><Alert tone="success">{message}</Alert></div>}
     <ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>
       {resource.data && <div className="stack"><Alert>등록과 동의는 별도입니다. 선택하지 않은 목적은 동의하지 않은 상태이며, 철회한 기능의 새 처리를 중단합니다.</Alert>

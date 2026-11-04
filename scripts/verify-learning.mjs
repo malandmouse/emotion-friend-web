@@ -15,27 +15,39 @@ async function check(name, action) { await action(); checks.push(name); console.
 const card = (page, title) => page.locator('.card').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
 const open = (page, suffix) => page.evaluate((value) => { window.location.hash = value }, `/workspace/children/${childId}/${suffix}`)
 const press = (page, name) => page.getByRole('button', { name, exact: true }).click()
+function deferred() { let release; const promise = new Promise((resolve) => { release = resolve }); return { promise, release } }
 
-async function setup(role) {
+async function setup(role, remember = false) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1080 } }); contexts.push(context)
   const actor = { id: randomUUID(), email: `${role}@example.test`, displayName: `${role} 검증`, requestedRole: role === 'ADMIN' ? null : role, role, status: 'ACTIVE', emailVerified: true, createdAt: now }
   const state = { available: true, denied: false, stale: false, wrongChild: false, malformed: false, expired: false, session: null, receipts: new Map(), expressions: new Map(), idempotency: new Map(), writes: [], gets: [], commits: 0, loseFinalize: true, more: false, periods: [], materials: Array.from({ length: 7 }, (_, index) => ({ summaryId: randomUUID(), materialId: randomUUID(), subject: `검토 주제 ${index + 1}`, summary: `생성된 이야기 요약 ${index + 1}\n서로의 의사를 존중해요.`, status: 'UNCONFIRMED' })) }
+  state.otherMaterial = { summaryId: randomUUID(), materialId: randomUUID(), subject: '다른 아동 주제', summary: '다른 아동의 요약', status: 'UNCONFIRMED' }
+  const refreshToken = () => ({ credential: { accessToken: `fixture-${role}`, expiresAt: new Date(Date.now() + 600_000).toISOString() }, refreshToken: randomUUID() })
   function makeSession() { return { sessionId, childId, planId, dayIndex: 1, executionMode: 'DAY1', localDate: now.slice(0, 10), timezone: 'Asia/Seoul', status: 'ACTIVE', revision: 1, worldRevision: 0, stars: 0, completedCount: 0, slots: Array.from({ length: 5 }, (_, index) => ({ slot: index + 1, materialId: randomUUID(), scenarioVersionId: randomUUID(), completed: false, receiptId: null })) } }
   await context.route('**/api/v1/**', async (route) => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname.replace('/api/v1', ''), headers = await req.allHeaders()
     const body = req.postData() ? req.postDataJSON() : undefined
     const reply = (status, value) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) })
     try {
-      if (path === '/auth/login') return reply(200, { credential: { accessToken: `fixture-${role}`, expiresAt: new Date(Date.now() + 600_000).toISOString() }, refreshToken: randomUUID() })
+      if (path === '/auth/login' || path === '/auth/refresh') return reply(200, refreshToken())
       assert.equal(headers.authorization, `Bearer fixture-${role}`)
       if (path === '/me') return reply(200, actor)
       if (req.method() === 'GET') state.gets.push(path)
-      if (path === '/children') return reply(200, { items: state.denied ? [] : [{ childId, pseudonym: '학습 검증 아동', profileVersion: 1, capabilities: role === 'GUARDIAN' ? ['MANAGE', 'VIEW_PROFILE', 'VIEW_SUMMARY'] : ['VIEW_PROFILE', 'VIEW_SUMMARY'] }], nextCursor: null })
+      if (path === '/children') return reply(200, { items: state.denied ? [] : [{ childId, pseudonym: '학습 검증 아동', profileVersion: 1, capabilities: role === 'GUARDIAN' ? ['MANAGE', 'VIEW_PROFILE', 'VIEW_SUMMARY'] : ['VIEW_PROFILE', 'VIEW_SUMMARY'] }, { childId: otherChild, pseudonym: '다른 아동', capabilities: ['VIEW_SUMMARY'] }], nextCursor: null })
       if (state.denied) return reply(403, { code: 'CHILD_ACCESS_DENIED' })
       const childPath = `/children/${childId}`
+      if (req.method() === 'GET' && path === `/children/${otherChild}/learning-material-summaries`) return reply(200, { childId: otherChild, items: [state.otherMaterial], nextCursor: null })
       if (req.method() === 'GET' && path === `${childPath}/learning-material-summaries`) {
         const filter = url.searchParams.get('status')
         const items = state.materials.filter((item) => filter ? item.status === filter : item.status !== 'CONFIRMED')
+        if (state.delaySummary) {
+          const { entered, response } = state.delaySummary
+          state.delaySummary = null
+          entered.release()
+          await response.promise
+          return await reply(200, { childId, items, nextCursor: null }).catch(() => {})
+        }
+        if (state.consentRevoked) return reply(403, { code: 'CONSENT_REQUIRED' })
         return reply(200, { childId, items: state.malformed ? [{ ...items[0], summaryId: null }] : items, nextCursor: null })
       }
       if (req.method() === 'GET' && path === `${childPath}/learning-sessions`) return reply(200, { childId, items: state.session ? [{ ...state.session, startedAt: now, completedAt: state.session.status === 'COMPLETED' ? now : null }] : [], nextCursor: null })
@@ -82,7 +94,9 @@ async function setup(role) {
     } catch (error) { protocolErrors.push(`${req.method()} ${path}: ${error.operator || error.message}`); return reply(500, { code: 'INTERNAL_ERROR' }) }
   })
   const page = await context.newPage(); page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto(`${base}/#/login`); await page.getByLabel('이메일 주소').fill(actor.email); await page.getByLabel('비밀번호').fill('Synthetic fixture password 123!'); await press(page, '로그인'); await page.getByRole('heading', { name: `${actor.displayName}님` }).waitFor()
+  await page.goto(`${base}/#/login`); await page.getByLabel('이메일 주소').fill(actor.email); await page.getByLabel('비밀번호').fill('Synthetic fixture password 123!')
+  if (remember) await page.getByLabel('로그인 상태 유지').check()
+  await press(page, '로그인'); await page.getByRole('heading', { name: `${actor.displayName}님` }).waitFor()
   return { page, state, context }
 }
 async function confirmExpression(page) {
@@ -95,7 +109,7 @@ async function confirmExpression(page) {
   await page.getByLabel('실제 학습 실행에서 선택한 경로·감정이며').check()
 }
 try {
-  const g = await setup('GUARDIAN'), { page, state } = g
+  const g = await setup('GUARDIAN', true), { page, state } = g
   await check('Review requires 1–5 items and supports atomic hold, confirm, confirmed history', async () => {
     await open(page, 'review'); await page.getByRole('heading', { name: '주제·요약 검토', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '선택한 요약 검토하기' }).isDisabled(), true); assert.equal(state.writes.length, 0)
@@ -103,7 +117,9 @@ try {
     assert.equal(await page.getByLabel('검토 주제 6', { exact: true }).isDisabled(), true)
     await press(page, '선택한 요약 검토하기'); await page.getByRole('dialog', { name: '선택한 주제·요약 검토' }).waitFor()
     await page.getByRole('combobox', { name: /^검토 결과/ }).selectOption('HOLD'); await page.getByLabel('선택한 주제·요약을 읽고').check()
-    await press(page, '선택한 요약에 적용'); await page.getByText('선택한 주제·요약의 검토 결과를 저장했습니다.').waitFor()
+    await page.getByRole('button', { name: '선택한 요약에 적용' }).evaluate((button) => { button.click(); button.click() })
+    await page.getByText('선택한 주제·요약의 검토 결과를 저장했습니다.').waitFor()
+    assert.equal(state.writes.length, 1)
     assert.equal(state.materials.filter((item) => item.status === 'ON_HOLD').length, 5)
     await page.getByLabel('검토 상태').selectOption('ON_HOLD'); await page.getByLabel('검토 주제 1', { exact: true }).check(); await press(page, '선택한 요약 검토하기'); await page.getByRole('combobox', { name: /^검토 결과/ }).selectOption('CONFIRM'); await page.getByLabel('선택한 주제·요약을 읽고').check(); await press(page, '선택한 요약에 적용')
     await page.getByLabel('검토 주제 1', { exact: true }).waitFor({ state: 'detached' }); await page.getByLabel('검토 상태').selectOption('CONFIRMED'); await page.getByLabel('검토 주제 1', { exact: true }).waitFor()
@@ -115,13 +131,37 @@ try {
     await page.getByText('요약 버전이 변경되었거나 입력 확정 참조가 만료되었습니다.', { exact: false }).waitFor(); await page.getByRole('heading', { name: '해당 상태의 콘텐츠가 없어요' }).waitFor()
     state.malformed = true; await page.getByLabel('검토 상태').selectOption(''); await page.getByRole('heading', { name: '화면을 불러오지 못했어요' }).waitFor(); assert.equal(await page.getByText('생성된 이야기 요약 2', { exact: false }).count(), 0); state.malformed = false
   })
+  await check('Delayed child response is cancelled on route change and excluded from the current view', async () => {
+    const delayed = { entered: deferred(), response: deferred() }
+    state.delaySummary = delayed
+    await press(page, '다시 확인')
+    await delayed.entered.promise
+    await page.getByRole('status').filter({ hasText: '불러오는 중이에요' }).waitFor()
+    assert.equal(await page.getByText('생성된 이야기 요약', { exact: false }).count(), 0)
+    const cancelled = page.waitForEvent('requestfailed', { predicate: (request) => request.url().includes(`/${childId}/learning-material-summaries`) })
+    await page.evaluate((id) => { window.location.hash = `/workspace/children/${id}/review` }, otherChild)
+    await page.getByLabel('다른 아동 주제').waitFor()
+    await cancelled
+    delayed.response.release()
+    assert.equal(await page.getByText('생성된 이야기 요약', { exact: false }).count(), 0)
+  })
+  await check('Reconnect rechecks consent and removes private results on revocation', async () => {
+    Object.assign(state.materials[1], { originalText: '비공개 원문 fixture', memory: '비공개 기억 fixture', manuscript: '비공개 원고 fixture', candidates: ['비공개 후보 fixture'] })
+    await open(page, 'review'); await page.getByRole('heading', { name: '주제·요약 검토', exact: true }).waitFor()
+    assert.equal((await page.locator('main').innerText()).includes('비공개'), false)
+    state.consentRevoked = true
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await page.getByRole('alert').filter({ hasText: '기본 프로필·학습 동의가 필요합니다.' }).waitFor()
+    assert.equal(await page.getByRole('heading', { name: '주제·요약 검토', exact: true }).count(), 0)
+    state.consentRevoked = false
+  })
   await check('Unavailable published material is explained; session accepts both 201 start and 200 restore', async () => {
     await open(page, 'sessions'); await page.getByLabel('실행 기기 식별자').fill('device-test-1'); state.available = false; await press(page, '세션 시작·복원')
     await page.getByText('발행된 학습 자료가 아직 준비되지 않았습니다.', { exact: false }).waitFor(); state.available = true; await press(page, '세션 시작·복원'); await page.getByRole('heading', { name: /이야기 1 · 실행 결과 연결/ }).waitFor()
     await open(page, 'sessions'); await page.getByLabel('실행 기기 식별자').fill('device-test-1'); await press(page, '세션 시작·복원'); await page.getByRole('heading', { name: /이야기 1 · 실행 결과 연결/ }).waitFor()
   })
   await check('No receipt is reported as missing; confirm alone creates no completion or star', async () => {
-    await page.getByRole('button', { name: '완료 여부 복구 조회' }).first().click(); await card(page, '이야기 1 · 완료 receipt').getByText('대상이 없거나 더 이상 접근할 수 없습니다.').waitFor()
+    await page.getByRole('button', { name: '완료 여부 복구 조회' }).first().click(); await card(page, '이야기 1 · 완료 receipt').getByText('아직 저장된 완료가 없어요').waitFor()
     await confirmExpression(page); assert.equal(state.commits, 0); assert.equal(state.session.stars, 0)
   })
   await check('Lost finalize response freezes input; identical idempotency key, body and clientCommitId replay once', async () => {
@@ -177,6 +217,17 @@ try {
     assert.equal(state.commits, 5); assert.equal(state.session.stars, 5)
     assert.equal(await page.getByText('직접 입력 확정과 완료 연결', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'receipt 보기', exact: true }).count(), 5)
+  })
+  await check('Reload and reconnect recover a stored receipt using reads only', async () => {
+    const before = state.writes.length
+    await open(page, `sessions/${sessionId}?receipt=1`)
+    await page.getByText('이야기 1의 완료가 수락되었습니다').waitFor()
+    await page.reload()
+    await page.getByText('이야기 1의 완료가 수락되었습니다').waitFor()
+    const read = page.waitForResponse((response) => response.url().endsWith('/slots/1/receipt') && response.request().method() === 'GET')
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await read
+    assert.equal(state.writes.length, before)
   })
   await check('Learning pages fit 834, 390 and 320px and render without JavaScript errors', async () => {
     for (const suffix of ['review', 'records', `sessions/${sessionId}`]) {

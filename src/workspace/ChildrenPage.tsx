@@ -7,7 +7,7 @@ import { useResource } from './useResource'
 
 export function ChildrenPage({ member }: { member: Member }) {
   const [cursor, setCursor] = useState<string | undefined>()
-  const load = useCallback(() => listChildren(cursor), [cursor])
+  const load = useCallback((signal: AbortSignal) => listChildren(cursor, signal), [cursor])
   const resource = useResource(load)
   const guardian = member.role === 'GUARDIAN'
   return <>

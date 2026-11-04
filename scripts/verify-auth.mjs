@@ -75,6 +75,14 @@ async function mockContext() {
         if (model.mode === 'me-unavailable') return reply(503, { code: 'WORKER_UNAVAILABLE' })
         return reply(200, member)
       }
+      if (path.startsWith('/api/v1/fixture/')) {
+        assert.ok(model.access.has(headers.authorization?.replace('Bearer ', '')))
+        if (headers.authorization === 'Bearer fixture-access-1') {
+          if (path.endsWith('/late')) await new Promise((resolve) => setTimeout(resolve, 250))
+          return reply(401, { code: 'TOKEN_EXPIRED' })
+        }
+        return reply(200, { ok: true })
+      }
       if (path === '/api/v1/auth/logout') {
         model.logoutCount += 1
         assert.ok(model.access.has(headers.authorization?.replace('Bearer ', '')))
@@ -211,6 +219,46 @@ try {
     assert.equal(model.refreshCount, 1)
     assert.deepEqual(model.protocolErrors, [])
     await context.close()
+  })
+
+  await check('Concurrent and late expired requests share one rotation, while writes require explicit replay', async () => {
+    const { context, model } = await mockContext()
+    try {
+      const page = await context.newPage()
+      await open(page, 'login'); await fillLogin(page)
+      await page.getByRole('heading', { name: `${member.displayName}님` }).waitFor()
+      const results = await page.evaluate(async () => {
+        const { authenticatedApi } = await import('/src/auth/session.ts')
+        return Promise.all([
+          authenticatedApi('/fixture/fast'),
+          authenticatedApi('/fixture/late'),
+          authenticatedApi('/fixture/write', { method: 'POST', body: {}, idempotencyKey: 'same-fixture-key' }).catch((error) => error.code),
+        ])
+      })
+      assert.deepEqual(results, [{ ok: true }, { ok: true }, 'TOKEN_EXPIRED'])
+      assert.equal(model.refreshCount, 1)
+      assert.equal(model.requests.filter((path) => path.endsWith('/fixture/write')).length, 1)
+      assert.deepEqual(model.protocolErrors, [])
+    } finally { await context.close() }
+  })
+
+  await check('Lost refresh response fails concurrent reads together without reusing the token', async () => {
+    const { context, model } = await mockContext()
+    try {
+      const page = await context.newPage()
+      await open(page, 'login'); await fillLogin(page, true)
+      await page.getByRole('heading', { name: `${member.displayName}님` }).waitFor()
+      model.mode = 'lost-refresh'
+      const results = await page.evaluate(async () => {
+        const { authenticatedApi } = await import('/src/auth/session.ts')
+        return Promise.allSettled([authenticatedApi('/fixture/fast'), authenticatedApi('/fixture/other')]).then((results) => results.map((result) => result.status))
+      })
+      assert.deepEqual(results, ['rejected', 'rejected'])
+      await page.getByRole('button', { name: '로그인', exact: true }).waitFor()
+      assert.equal(model.refreshCount, 1)
+      assert.equal(await page.evaluate((key) => localStorage.getItem(key), storageKey), null)
+      assert.deepEqual(model.protocolErrors, [])
+    } finally { await context.close() }
   })
 
   if (process.argv.includes('--live')) {

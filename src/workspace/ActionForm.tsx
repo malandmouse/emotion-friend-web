@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { ApiFailure, isObject } from '../api/client'
 import { authenticatedApi } from '../auth/session'
 import { Alert, Button, Checkbox, TextField } from '../components/ui'
 import { workspaceError } from './contracts'
+import { ResourceContext } from './resourceContext'
 
 interface Plan { path: string; method: 'POST' | 'PUT' | 'DELETE'; body?: unknown; expectedStatus: number | readonly number[]; key?: string }
 export interface ActionFormProps {
@@ -21,13 +22,19 @@ export function ActionForm({ label, children, reauthenticate = false, idempotent
   const [error, setError] = useState<string | null>(null)
   const [uncertain, setUncertain] = useState(false)
   const locked = useRef(false)
-  const mounted = useRef(true)
+  const scope = useRef<AbortController | null>(null)
   const plan = useRef<Plan | null>(null)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const resource = useContext(ResourceContext)
+  useLayoutEffect(() => {
+    const controller = new AbortController()
+    scope.current = controller
+    return () => { controller.abort(); plan.current = null }
+  }, [])
   useEffect(() => { onLockChange?.(pending || uncertain) }, [pending, uncertain, onLockChange])
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (locked.current || disabled) return
+    const signal = scope.current?.signal
+    if (locked.current || disabled || resource?.loading || !signal || signal.aborted) return
     const form = event.currentTarget
     const values = new FormData(form)
     locked.current = true; setPending(true); setError(null)
@@ -36,8 +43,8 @@ export function ActionForm({ label, children, reauthenticate = false, idempotent
       if (!uncertain || !plan.current) {
         let ref: string | undefined
         if (reauthenticate) {
-          const result = await authenticatedApi('/auth/reauthenticate', { method: 'POST', body: { password: values.get('_password') }, credentialCheck: true })
-          if (!mounted.current) return
+          const result = await authenticatedApi('/auth/reauthenticate', { method: 'POST', body: { password: values.get('_password') }, credentialCheck: true, signal })
+          if (signal.aborted) return
           if (!isObject(result) || typeof result.verificationRef !== 'string') throw new ApiFailure('INVALID_RESPONSE')
           ref = result.verificationRef
         }
@@ -45,21 +52,23 @@ export function ActionForm({ label, children, reauthenticate = false, idempotent
       }
       const current = plan.current
       sent = true
-      const result = await authenticatedApi(current.path, { method: current.method, body: current.body, expectedStatus: current.expectedStatus, idempotencyKey: current.key })
-      if (!mounted.current) return
+      const result = await authenticatedApi(current.path, { method: current.method, body: current.body, expectedStatus: current.expectedStatus, idempotencyKey: current.key, signal })
+      if (signal.aborted) return
       await onSuccess(result)
-      plan.current = null; if (mounted.current) setUncertain(false)
+      plan.current = null; if (!signal.aborted) setUncertain(false)
       form.reset()
     } catch (failure) {
-      const unknownOutcome = sent && idempotent && (uncertain || !(failure instanceof ApiFailure) || failure.status === 0 || failure.status >= 500)
-      if (mounted.current) setUncertain(unknownOutcome)
-      if (!unknownOutcome) plan.current = null
-      if (mounted.current) setError(workspaceError(failure))
-      await onFailure?.(failure)
+      if (signal.aborted || (failure instanceof ApiFailure && failure.code === 'REQUEST_CANCELLED')) return
+      const replayable = sent && idempotent && (!(failure instanceof ApiFailure) || failure.status === 0 || failure.status >= 500 || failure.code === 'TOKEN_EXPIRED' || (uncertain && failure.status === 429))
+      setUncertain(replayable)
+      if (!replayable) plan.current = null
+      setError(workspaceError(failure))
+      if (onFailure) await onFailure(failure)
+      else if (failure instanceof ApiFailure && [403, 404].includes(failure.status)) await resource?.reload()
     } finally {
       const password = form.elements.namedItem('_password') as HTMLInputElement | null
       if (password) password.value = ''
-      locked.current = false; if (mounted.current) setPending(false)
+      locked.current = false; if (!signal.aborted) setPending(false)
     }
   }
   return <form className="action-form" onSubmit={submit}>

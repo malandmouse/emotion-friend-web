@@ -13,7 +13,8 @@ let session: Session | null = null
 let state: AuthState = { status: 'loading', member: null, error: null }
 const listeners = new Set<() => void>()
 let initialized: Promise<void> | undefined
-let refreshing: Promise<Session> | undefined
+let refreshing: { key: string; result: Promise<Session> } | undefined
+let accessScope = new AbortController()
 let loadingMember: Promise<Member> | undefined
 let loadingMemberKey: string | undefined
 let localQueue: Promise<unknown> = Promise.resolve()
@@ -46,7 +47,13 @@ function clearSession(error: ApiFailure | null = null) {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* In-memory credentials still clear. */ }
   }
   session = null
+  resetAccessScope()
   publish({ status: 'anonymous', member: null, error })
+}
+
+function resetAccessScope() {
+  accessScope.abort()
+  accessScope = new AbortController()
 }
 
 function saveCredentials(credentials: Credentials, key: string, persistent: boolean): Session {
@@ -59,8 +66,8 @@ function saveCredentials(credentials: Credentials, key: string, persistent: bool
   return next
 }
 
-async function refreshLocked(): Promise<Session> {
-  if (!session) throw new ApiFailure('SESSION_EXPIRED', 401)
+async function refreshLocked(key: string): Promise<Session> {
+  if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
   const current = session
   if (current.persistent) {
     const latest = readSaved()
@@ -70,63 +77,68 @@ async function refreshLocked(): Promise<Session> {
   try {
     // No Bearer, idempotency key, automatic retry or reuse after an uncertain response.
     const credentials = parseCredentials(await requestApi('/auth/refresh', { method: 'POST', body: { refreshToken: current.refreshToken } }))
+    if (session?.key !== key || (current.persistent && readSaved()?.key !== key)) throw new ApiFailure('SESSION_CHANGED', 401)
     return saveCredentials(credentials, current.key, current.persistent)
   } catch {
+    if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
     const failure = new ApiFailure('SESSION_EXPIRED', 401)
     clearSession(failure)
     throw failure
   }
 }
 
-function refresh(): Promise<Session> {
-  if (!refreshing) {
-    refreshing = withSessionLock(refreshLocked).finally(() => { refreshing = undefined })
+function refresh(key: string): Promise<Session> {
+  if (refreshing?.key !== key) {
+    const result = withSessionLock(() => refreshLocked(key)).finally(() => {
+      if (refreshing?.result === result) refreshing = undefined
+    })
+    refreshing = { key, result }
   }
-  return refreshing
+  return refreshing.result
 }
 
 /** GET may recover once from expiry; writes are never automatically replayed. */
 export async function authenticatedApi(path: string, options: Omit<ApiOptions, 'accessToken'> & { credentialCheck?: boolean } = {}): Promise<unknown> {
   if (!session) throw new ApiFailure('SESSION_EXPIRED', 401)
   const key = session.key
+  const scope = accessScope.signal
+  const { credentialCheck = false, signal: callerSignal, ...optionsWithoutSignal } = options
+  const signal = callerSignal ? AbortSignal.any([scope, callerSignal]) : scope
+  const request = { ...optionsWithoutSignal, signal }
+  const checkScope = () => {
+    if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
+    if (signal.aborted) throw new ApiFailure('REQUEST_CANCELLED')
+  }
+  checkScope()
   let current = session
-  if (current.expiresAt <= Date.now() + 15_000) current = await refresh()
-  const { credentialCheck = false, ...request } = options
+  const refreshed = current.expiresAt <= Date.now() + 15_000
+  if (refreshed) current = await refresh(key)
+  checkScope()
   try {
     const result = await requestApi(path, { ...request, accessToken: current.accessToken })
-    if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
+    checkScope()
     return result
   } catch (error) {
-    if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
-    if (!(error instanceof ApiFailure) || error.status !== 401 || credentialCheck) throw error
-    if (request.method && request.method !== 'GET') { clearSession(error); throw error }
-    const next = session.accessToken !== current.accessToken ? session : await refresh()
+    checkScope()
+    if (!(error instanceof ApiFailure)) throw error
+    if (path !== '/me' && (error.code === 'ACCOUNT_NOT_ACTIVE' || error.code === 'ROLE_FORBIDDEN')) void reloadMember().catch(() => undefined)
+    if (error.status !== 401 || (credentialCheck && error.code !== 'TOKEN_EXPIRED')) throw error
+    const latest = session
+    if (latest?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
+    if (latest.accessToken === current.accessToken && (error.code !== 'TOKEN_EXPIRED' || refreshed)) {
+      clearSession(error)
+      throw error
+    }
+    const next = latest.accessToken !== current.accessToken ? latest : await refresh(key)
+    checkScope()
+    if (request.method && request.method !== 'GET') throw error
     try {
       const result = await requestApi(path, { ...request, accessToken: next.accessToken })
-      if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
+      checkScope()
       return result
     } catch (retryError) {
-      if (session?.key === key && retryError instanceof ApiFailure && retryError.status === 401) clearSession(retryError)
-      throw retryError
-    }
-  }
-}
-
-async function currentMember(): Promise<Member> {
-  if (!session) throw new ApiFailure('SESSION_EXPIRED', 401)
-  const key = session.key
-  let current = session
-  let refreshed = false
-  if (current.expiresAt <= Date.now() + 15_000) { current = await refresh(); refreshed = true }
-  try { return parseMember(await requestApi('/me', { accessToken: current.accessToken })) }
-  catch (error) {
-    if (session?.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
-    if (!(error instanceof ApiFailure) || error.status !== 401) throw error
-    if (refreshed) { clearSession(error); throw error }
-    current = await refresh()
-    try { return parseMember(await requestApi('/me', { accessToken: current.accessToken })) }
-    catch (retryError) {
-      if (session?.key === key && retryError instanceof ApiFailure && retryError.status === 401) clearSession(retryError)
+      checkScope()
+      if (session?.accessToken === next.accessToken && retryError instanceof ApiFailure && retryError.status === 401) clearSession(retryError)
       throw retryError
     }
   }
@@ -136,14 +148,18 @@ export async function reloadMember(): Promise<Member> {
   const key = session?.key
   if (!loadingMember || loadingMemberKey !== key) {
     loadingMemberKey = key
-    const operation = currentMember().then((member) => {
+    const operation = authenticatedApi('/me').then(parseMember).then((member) => {
       if (!session || session.key !== key) throw new ApiFailure('SESSION_CHANGED', 401)
+      const previous = state.member
+      if (previous && (previous.role !== member.role || previous.status !== member.status || previous.emailVerified !== member.emailVerified)) resetAccessScope()
       publish({ status: 'authenticated', member, error: null })
       return member
     }).catch((error: unknown) => {
       const failure = error instanceof ApiFailure ? error : new ApiFailure('NETWORK_ERROR')
-      if (session?.key === key) publish({ status: 'error', member: null, error: failure })
-      else if (!session) publish({ status: 'anonymous', member: null, error: failure })
+      if (key && session?.key === key) {
+        resetAccessScope()
+        publish({ status: 'error', member: null, error: failure })
+      }
       throw failure
     }).finally(() => { if (loadingMember === operation) { loadingMember = undefined; loadingMemberKey = undefined } })
     loadingMember = operation
@@ -179,6 +195,8 @@ export async function login(email: string, password: string, remember: boolean):
     // A new login replaces this browser's selected persistent session, without ending other server sessions.
     if (readSaved()) localStorage.removeItem(STORAGE_KEY)
     saveCredentials(credentials, crypto.randomUUID(), remember)
+    resetAccessScope()
+    publish({ status: 'loading', member: null, error: null })
   })
   return reloadMember()
 }
@@ -188,7 +206,7 @@ export async function logout(): Promise<void> {
     if (!session) { clearSession(); return }
     try {
       let current = session
-      if (current.expiresAt <= Date.now() + 15_000) current = await refreshLocked()
+      if (current.expiresAt <= Date.now() + 15_000) current = await refreshLocked(current.key)
       if (current.persistent) {
         const latest = readSaved()
         if (!latest || latest.key !== current.key) { clearSession(); return }
@@ -209,6 +227,7 @@ window.addEventListener('storage', (event) => {
   const latest = readSaved()
   if (!latest || latest.key !== session.key) {
     session = null
+    resetAccessScope()
     publish({ status: 'anonymous', member: null, error: new ApiFailure('SESSION_CHANGED') })
   } else { session = { ...session, refreshToken: latest.refreshToken } }
 })

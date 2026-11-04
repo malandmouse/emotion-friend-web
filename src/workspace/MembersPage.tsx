@@ -12,7 +12,7 @@ export function MembersPage({ member }: { member: Member }) {
   const [cursor, setCursor] = useState<string | undefined>()
   const [selected, setSelected] = useState<{ member: Member; action: 'approve' | 'reject' | 'suspend' | 'role' } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const load = useCallback(async () => page<Member>(await authenticatedApi(`/admin/members?limit=20${status ? `&status=${status}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)), [status, cursor])
+  const load = useCallback(async (signal: AbortSignal) => page<Member>(await authenticatedApi(`/admin/members?limit=20${status ? `&status=${status}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal })), [status, cursor])
   const resource = useResource(load)
   return <>
     <PageHeader title="회원·역할 관리" description="가입 신청 역할과 승인 역할을 구분하고, 검토 근거를 남깁니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => { setSelected(null); void resource.reload() }}>회원 새로고침</Button>} />

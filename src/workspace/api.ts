@@ -4,13 +4,13 @@ import { items, object, page, uuid } from './contracts'
 import type { ChildSummary, Consent, InboxInvitation, Notice, Profile, SentInvitation, Therapist } from './contracts'
 
 export const childPath = (id: string) => `/children/${uuid(id)}`
-export const listChildren = async (cursor?: string) => page<ChildSummary>(await authenticatedApi(`/children?limit=100${cursor ? `&cursor=${encodeURIComponent(uuid(cursor))}` : ''}`))
-export async function findChild(id: string): Promise<ChildSummary> {
+export const listChildren = async (cursor?: string, signal?: AbortSignal) => page<ChildSummary>(await authenticatedApi(`/children?limit=100${cursor ? `&cursor=${encodeURIComponent(uuid(cursor))}` : ''}`, { signal }))
+export async function findChild(id: string, signal?: AbortSignal): Promise<ChildSummary> {
   uuid(id)
   let cursor: string | undefined
   const visited = new Set<string>()
   do {
-    const result = await listChildren(cursor)
+    const result = await listChildren(cursor, signal)
     const child = result.items.find((value) => value.childId === id)
     if (child) {
       if (!Array.isArray(child.capabilities) || typeof child.pseudonym !== 'string') throw new ApiFailure('INVALID_RESPONSE')
@@ -22,24 +22,24 @@ export async function findChild(id: string): Promise<ChildSummary> {
   } while (cursor)
   throw new ApiFailure('RESOURCE_NOT_FOUND', 404)
 }
-export async function loadProfile(id: string) {
-  const child = await findChild(id)
+export async function loadProfile(id: string, signal?: AbortSignal) {
+  const child = await findChild(id, signal)
   if (!child.capabilities.includes('VIEW_PROFILE')) throw new ApiFailure('CHILD_ACCESS_DENIED', 403)
-  const profile = object<Profile>(await authenticatedApi(`${childPath(id)}/profile`))
+  const profile = object<Profile>(await authenticatedApi(`${childPath(id)}/profile`, { signal }))
   if (profile.childId !== id || !Number.isInteger(profile.profileVersion) || !['BOY', 'GIRL'].includes(profile.gender) || !['ELEMENTARY_MIDDLE', 'TARGET_8_TO_13'].includes(profile.ageBand) || profile.primaryLanguage !== 'ko' || !Array.isArray(profile.communicationModes) || !Array.isArray(profile.supportPreferences)) throw new ApiFailure('INVALID_RESPONSE')
   return { child, profile }
 }
-export async function loadConsents(id: string) {
-  const child = await findChild(id)
+export async function loadConsents(id: string, signal?: AbortSignal) {
+  const child = await findChild(id, signal)
   if (!child.capabilities.includes('MANAGE')) throw new ApiFailure('CHILD_ACCESS_DENIED', 403)
-  const [rawNotices, rawConsents] = await Promise.all([authenticatedApi('/consent-notices'), authenticatedApi(`${childPath(id)}/consents`)])
+  const [rawNotices, rawConsents] = await Promise.all([authenticatedApi('/consent-notices', { signal }), authenticatedApi(`${childPath(id)}/consents`, { signal })])
   if (!Array.isArray(rawNotices) || rawNotices.some((notice) => !isObject(notice) || typeof notice.scope !== 'string' || typeof notice.noticeVersion !== 'string' || typeof notice.purpose !== 'string')) throw new ApiFailure('INVALID_RESPONSE')
   return { child, notices: rawNotices as Notice[], consents: items<Consent>(rawConsents) }
 }
-export async function loadConnections(id: string) {
-  const child = await findChild(id)
+export async function loadConnections(id: string, signal?: AbortSignal) {
+  const child = await findChild(id, signal)
   if (!child.capabilities.includes('MANAGE')) throw new ApiFailure('CHILD_ACCESS_DENIED', 403)
-  const [sent, connected, consents] = await Promise.all([authenticatedApi(`${childPath(id)}/therapist-invitations`), authenticatedApi(`${childPath(id)}/therapists`), authenticatedApi(`${childPath(id)}/consents`)])
+  const [sent, connected, consents] = await Promise.all([authenticatedApi(`${childPath(id)}/therapist-invitations`, { signal }), authenticatedApi(`${childPath(id)}/therapists`, { signal }), authenticatedApi(`${childPath(id)}/consents`, { signal })])
   return { child, invitations: items<SentInvitation>(sent), therapists: items<Therapist>(connected), coreGranted: items<Consent>(consents).some((item) => item.scope === 'CORE_PROFILE_LEARNING' && item.granted) }
 }
-export const loadInbox = async () => items<InboxInvitation>(await authenticatedApi('/me/therapist-invitations'))
+export const loadInbox = async (signal?: AbortSignal) => items<InboxInvitation>(await authenticatedApi('/me/therapist-invitations', { signal }))

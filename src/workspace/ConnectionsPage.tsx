@@ -8,14 +8,14 @@ import { useResource } from './useResource'
 
 const invitationStates: Record<string, string> = { PENDING: '응답 대기', ACCEPTED: '수락됨', DECLINED: '거절됨', CANCELLED: '취소됨', EXPIRED: '만료됨' }
 export function ConnectionsPage({ id }: { id: string }) {
-  const load = useCallback(() => loadConnections(id), [id])
+  const load = useCallback((signal: AbortSignal) => loadConnections(id, signal), [id])
   const resource = useResource(load)
   const [message, setMessage] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [action, setAction] = useState<{ kind: 'cancel' | 'disconnect' | 'deactivate'; id: string; label: string } | null>(null)
   async function complete(text: string) { setMessage(text); setAction(null); setInviteOpen(false); await resource.reload() }
   return <>
-    <PageHeader title={resource.data ? `${resource.data.child.pseudonym}의 연결 관리` : '아동 연결 관리'} description="치료사 초대와 연결 상태를 각각 확인합니다. 기기 연결은 후속 기능입니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => { setAction(null); void resource.reload() }}>상태 새로고침</Button>} />
+    <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 연결 관리` : '아동 연결 관리'} description="치료사 초대와 연결 상태를 각각 확인합니다. 기기 연결은 후속 기능입니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => { setAction(null); void resource.reload() }}>상태 새로고침</Button>} />
     {message && <div className="section-notice"><Alert tone="success">{message}</Alert></div>}
     <ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>
       {resource.data && <div className="stack">

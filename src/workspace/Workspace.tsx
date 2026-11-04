@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import type { IconName } from '../components/ui/Icon'
 import { AppShell } from '../components/layout/AppShell'
 import { Card, EmptyState, LoadingState } from '../components/ui'
 import { useAuth } from '../auth/useAuth'
+import { reloadMember } from '../auth/session'
 import { AccountPage } from '../pages/AccountPage'
 import { ChildrenPage } from './ChildrenPage'
 import { ChildProfilePage, NewChildPage } from './ChildProfilePage'
@@ -17,6 +19,16 @@ import { isActive, roleLabels } from './contracts'
 export function Workspace({ path }: { path: string }) {
   const auth = useAuth()
   const member = auth.member
+  useEffect(() => {
+    if (auth.status !== 'authenticated' && auth.status !== 'error') return
+    const revalidate = () => { void reloadMember().catch(() => undefined) }
+    window.addEventListener('focus', revalidate)
+    window.addEventListener('online', revalidate)
+    return () => {
+      window.removeEventListener('focus', revalidate)
+      window.removeEventListener('online', revalidate)
+    }
+  }, [auth.status])
   if (auth.status === 'loading') return <main className="fatal-error"><LoadingState label="계정 권한을 확인하고 있어요" /></main>
   if (!member || !isActive(member)) return <AccountPage />
   const role = member.role!

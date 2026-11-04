@@ -9,14 +9,16 @@ interface Props {
   children: ReactNode
   onClose: () => void
   closeDisabled?: boolean
+  suspended?: boolean
 }
 
-export function Modal({ title, children, onClose, closeDisabled = false }: Props) {
+export function Modal({ title, children, onClose, closeDisabled = false, suspended = false }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const titleId = useId()
 
   useEffect(() => {
+    if (suspended) return
     const element = dialog.current!
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
@@ -32,7 +34,7 @@ export function Modal({ title, children, onClose, closeDisabled = false }: Props
       document.body.style.paddingRight = previousPadding
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
     }
-  }, [])
+  }, [suspended])
 
   return createPortal(<dialog ref={dialog} className="modal" aria-labelledby={titleId} aria-modal="true" onCancel={(event) => { event.preventDefault(); if (!closeDisabled) onClose() }} onKeyDown={(event) => {
     if (event.key !== 'Tab') return

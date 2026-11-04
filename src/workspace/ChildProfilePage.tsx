@@ -14,14 +14,14 @@ export function NewChildPage() {
 }
 
 export function ChildProfilePage({ id, member }: { id: string; member: Member }) {
-  const load = useCallback(() => loadProfile(id), [id])
+  const load = useCallback((signal: AbortSignal) => loadProfile(id, signal), [id])
   const resource = useResource(load)
   const [notice, setNotice] = useState(false)
   const [disconnectOpen, setDisconnectOpen] = useState(false)
   const canEdit = member.role === 'GUARDIAN' && resource.data?.child.capabilities.includes('EDIT_PROFILE')
   const profile = resource.data?.profile
   return <>
-    <PageHeader title={resource.data ? `${resource.data.child.pseudonym}의 프로필` : '아동 프로필'} description="현재 아동의 프로필과 부여된 권한을 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>최신 프로필 확인</Button>} />
+    <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 프로필` : '아동 프로필'} description="현재 아동의 프로필과 부여된 권한을 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>최신 프로필 확인</Button>} />
     {notice && <div className="section-notice"><Alert tone="success">프로필을 저장했습니다.</Alert></div>}
     <ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>
       {resource.data && profile && <div className="stack"><Capabilities values={resource.data.child.capabilities} />

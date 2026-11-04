@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { Member } from '../auth/contracts'
 import { ApiFailure } from '../api/client'
-import { Alert, Badge, Button, Card, Checkbox, PageHeader, TextArea, TextField } from '../components/ui'
+import { Alert, Badge, Button, Card, Checkbox, EmptyState, PageHeader, TextArea, TextField } from '../components/ui'
 import { ActionForm } from './ActionForm'
 import { formatTime } from './contracts'
 import { loadReceipt, loadSession, needsLearningReload, parseExpression, parseReceipt, sessionLabels, sessionPath } from './learning'
@@ -17,9 +17,9 @@ function ReceiptDetails({ receipt }: { receipt: Receipt }) {
   </div>
 }
 function ReceiptPanel({ childId, sessionId, slot }: { childId: string; sessionId: string; slot: number }) {
-  const load = useCallback(() => loadReceipt(childId, sessionId, slot), [childId, sessionId, slot])
+  const load = useCallback((signal: AbortSignal) => loadReceipt(childId, sessionId, slot, signal), [childId, sessionId, slot])
   const resource = useResource(load)
-  return <Card title={`이야기 ${slot} · 완료 receipt`} action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>receipt 다시 조회</Button>}><ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>{resource.data && <ReceiptDetails receipt={resource.data} />}</ResourceState></Card>
+  return <Card title={`이야기 ${slot} · 완료 receipt`} action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>receipt 다시 조회</Button>}><ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>{resource.data ? <ReceiptDetails receipt={resource.data} /> : <EmptyState title="아직 저장된 완료가 없어요" description="현재 세션에 이 이야기의 완료 기록이 없습니다." />}</ResourceState></Card>
 }
 
 function CompletionPanel({ session, reload, recover }: { session: LearningSession; reload: () => Promise<void>; recover: (slot: number) => Promise<void> }) {
@@ -42,7 +42,7 @@ function CompletionPanel({ session, reload, recover }: { session: LearningSessio
       }} onSuccess={(raw) => {
         const parsed = parseExpression(raw, submittedVersion.current)
         setVersion(parsed.draftVersion); setExpression(parsed)
-      }} onRecover={() => { setEntry((value) => value + 1); setVersion((value) => value + 1); return recover(slot) }} onFailure={onFailure}>
+      }} onRecover={() => recover(slot)} onFailure={onFailure}>
         <TextArea label="아동이 확인할 직접 입력" name="text" required maxLength={2000} hint="원문은 브라우저 저장소에 저장하지 않습니다. 입력 확정만으로 완료나 별이 생기지는 않습니다." />
         <TextField label="입력 버전" name="draftVersion" type="number" required min={version} step={1} defaultValue={version} hint="다시 확정할 때는 이전보다 큰 버전을 사용합니다. 새로고침 후에는 실행 화면의 최신 버전을 확인하세요." />
         <Checkbox required name="childConfirmed" label="아동이 이 입력을 직접 확인했습니다." />
@@ -65,7 +65,7 @@ function CompletionPanel({ session, reload, recover }: { session: LearningSessio
 }
 
 export function SessionPage({ id, sessionId, initialReceipt, member }: { id: string; sessionId: string; initialReceipt?: number; member: Member }) {
-  const load = useCallback(() => loadSession(id, sessionId), [id, sessionId])
+  const load = useCallback((signal: AbortSignal) => loadSession(id, sessionId, signal), [id, sessionId])
   const resource = useResource(load)
   const [receiptSlot, setReceiptSlot] = useState(initialReceipt)
   const [receiptVersion, setReceiptVersion] = useState(0)
@@ -73,7 +73,7 @@ export function SessionPage({ id, sessionId, initialReceipt, member }: { id: str
   const session = data?.session
   async function recover(slot: number) { setReceiptSlot(slot); setReceiptVersion((value) => value + 1); await resource.reload() }
   return <>
-    <PageHeader title={data ? `${data.child.pseudonym}의 학습 세션` : '학습 세션 상세'} description="현재 누적 상태와 슬롯별 완료 receipt를 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>세션 상태 확인</Button>} />
+    <PageHeader title={!resource.loading && data ? `${data.child.pseudonym}의 학습 세션` : '학습 세션 상세'} description="현재 누적 상태와 슬롯별 완료 receipt를 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>세션 상태 확인</Button>} />
     <ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>
       {data && session && <div className="stack">
         <Card title={`Day ${session.dayIndex} · ${session.localDate}`} action={<Badge tone={session.status === 'COMPLETED' ? 'success' : 'info'}>{sessionLabels[session.status]}</Badge>}>

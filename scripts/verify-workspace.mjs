@@ -224,14 +224,14 @@ try {
     reauthBarrier = new Promise((resolve) => { release = resolve })
     const before = counts.consent
     await confirm(form)
-    const response = g.page.waitForResponse((value) => value.url().endsWith('/auth/reauthenticate'))
+    const cancelled = g.page.waitForEvent('requestfailed', { predicate: (request) => request.url().endsWith('/auth/reauthenticate') })
     await form.getByRole('button', { name: '이 목적에 동의', exact: true }).click()
     await form.getByRole('button', { name: '처리 중', exact: true }).waitFor()
     assert.equal(await g.page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).isDisabled(), true)
     await g.page.keyboard.press('Escape'); assert.equal(await g.page.getByRole('dialog').isVisible(), true)
     await hash(g.page, 'children')
     await g.page.getByRole('heading', { name: '학습 아동 선택', exact: true }).waitFor()
-    release(); await response; reauthBarrier = undefined
+    await cancelled; release(); reauthBarrier = undefined
     await g.page.waitForTimeout(100)
     assert.equal(counts.consent, before)
   })

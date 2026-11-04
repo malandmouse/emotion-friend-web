@@ -15,10 +15,10 @@ const limitationLabels: Record<string, string> = { RECOGNITION_NOT_COLLECTED: '�
 export function SessionsPage({ id, member }: { id: string; member: Member }) {
   const [cursor, setCursor] = useState<string>()
   const [filter, setFilter] = useState<SessionStatus | ''>('')
-  const load = useCallback(() => loadSessions(id, cursor, filter || undefined), [id, cursor, filter])
+  const load = useCallback((signal: AbortSignal) => loadSessions(id, cursor, filter || undefined, signal), [id, cursor, filter])
   const resource = useResource(load)
   return <>
-    <PageHeader title={resource.data ? `${resource.data.child.pseudonym}의 학습 세션` : '학습 세션'} description="서버에 저장된 진행 상태와 완료·별을 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>세션 새로고침</Button>} />
+    <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 학습 세션` : '학습 세션'} description="서버에 저장된 진행 상태와 완료·별을 확인합니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>세션 새로고침</Button>} />
     <div className="stack">
       <ResourceState loading={resource.loading} error={resource.error} retry={resource.reload}>
         {resource.data && <>
@@ -44,7 +44,7 @@ export function RecordsPage({ id }: { id: string }) {
   const [cursor, setCursor] = useState<string>()
   const [period, setPeriod] = useState('')
   const [periodError, setPeriodError] = useState('')
-  const load = useCallback(() => loadRecords(id, cursor, period), [id, cursor, period])
+  const load = useCallback((signal: AbortSignal) => loadRecords(id, cursor, period, signal), [id, cursor, period])
   const resource = useResource(load)
   function changePeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -53,7 +53,7 @@ export function RecordsPage({ id }: { id: string }) {
   }
   const summary = resource.data?.summary
   return <>
-    <PageHeader title={resource.data ? `${resource.data.child.pseudonym}의 학습 결과·기록` : '학습 결과·기록'} description="수락된 완료 기록과 별만 표시합니다. 감정 선택을 정답률이나 진단 점수로 해석하지 않습니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>기록 새로고침</Button>} />
+    <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 학습 결과·기록` : '학습 결과·기록'} description="수락된 완료 기록과 별만 표시합니다. 감정 선택을 정답률이나 진단 점수로 해석하지 않습니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>기록 새로고침</Button>} />
     <div className="stack">
       <Card title="기간별 학습 요약" description="기본 최근 30일 · 날짜 선택은 한국 시간 기준이며 시작일과 종료일을 포함합니다. 최대 366일을 조회할 수 있어요.">
         <form onSubmit={changePeriod} className="period-form"><TextField label="시작일" name="from" type="date" required /><TextField label="종료일" name="to" type="date" required /><div className="row"><Button type="submit" variant="secondary" disabled={resource.loading}>기간 적용</Button><Button variant="ghost" disabled={resource.loading} onClick={() => { setPeriod(''); setPeriodError('') }}>최근 30일</Button></div></form>

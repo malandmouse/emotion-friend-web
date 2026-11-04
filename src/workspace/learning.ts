@@ -47,29 +47,38 @@ export function parseExpression(raw: unknown, version: number): Expression {
   if (!isObject(raw) || !id(raw.confirmedExpressionRef) || !date(raw.expiresAt) || raw.draftVersion !== version) throw invalid()
   return raw as unknown as Expression
 }
-export async function learningChild(childId: string, manage = false) {
-  const child = await findChild(childId)
-  if (!child.capabilities.includes(manage ? 'MANAGE' : 'VIEW_SUMMARY')) throw new ApiFailure('CHILD_ACCESS_DENIED', 403)
+async function learningChild(childId: string, signal?: AbortSignal) {
+  const child = await findChild(childId, signal)
+  if (!child.capabilities.includes('VIEW_SUMMARY')) throw new ApiFailure('CHILD_ACCESS_DENIED', 403)
   return child
 }
 const query = (cursor?: string, filter?: string) => `?limit=20${cursor ? `&cursor=${uuid(cursor)}` : ''}${filter ? `&status=${encodeURIComponent(filter)}` : ''}`
-export async function loadMaterials(childId: string, cursor?: string, filter?: MaterialStatus) {
-  const child = await learningChild(childId)
-  return { child, ...learningPage(await authenticatedApi(`${childPath(childId)}/learning-material-summaries${query(cursor, filter)}`), childId, material) }
+export async function loadMaterials(childId: string, cursor?: string, filter?: MaterialStatus, signal?: AbortSignal) {
+  const child = await learningChild(childId, signal)
+  const { items, nextCursor } = learningPage(await authenticatedApi(`${childPath(childId)}/learning-material-summaries${query(cursor, filter)}`, { signal }), childId, material)
+  return { child, nextCursor, items: items.map(({ summaryId, materialId, subject, summary, status }) => ({ summaryId, materialId, subject, summary, status })) }
 }
-export function parseMaterialConfirmation(raw: unknown, childId: string) { return learningPage(raw, childId, material) }
-export async function loadSessions(childId: string, cursor?: string, filter?: SessionStatus) {
-  const child = await learningChild(childId)
-  return { child, ...learningPage(await authenticatedApi(`${childPath(childId)}/learning-sessions${query(cursor, filter)}`), childId, sessionItem) }
+export function parseMaterialConfirmation(raw: unknown, childId: string, selected: string[], decision: 'CONFIRM' | 'HOLD') {
+  const { items, nextCursor } = learningPage(raw, childId, material)
+  const expected = decision === 'CONFIRM' ? 'CONFIRMED' : 'ON_HOLD'
+  if (nextCursor !== null || items.length !== selected.length || !selected.every((id) => items.some((item) => item.summaryId === id && item.status === expected))) throw invalid()
 }
-export async function loadSession(childId: string, sessionId: string) {
-  const child = await learningChild(childId)
-  return { child, session: parseSession(await authenticatedApi(sessionPath(sessionId)), childId, sessionId) }
+export async function loadSessions(childId: string, cursor?: string, filter?: SessionStatus, signal?: AbortSignal) {
+  const child = await learningChild(childId, signal)
+  return { child, ...learningPage(await authenticatedApi(`${childPath(childId)}/learning-sessions${query(cursor, filter)}`, { signal }), childId, sessionItem) }
 }
-export async function loadReceipt(childId: string, sessionId: string, slot: number) {
-  const { session } = await loadSession(childId, sessionId)
+export async function loadSession(childId: string, sessionId: string, signal?: AbortSignal) {
+  const child = await learningChild(childId, signal)
+  return { child, session: parseSession(await authenticatedApi(sessionPath(sessionId), { signal }), childId, sessionId) }
+}
+export async function loadReceipt(childId: string, sessionId: string, slot: number, signal?: AbortSignal) {
   if (!integer(slot, 1, 5)) throw invalid()
-  return parseReceipt(await authenticatedApi(`${sessionPath(sessionId)}/slots/${slot}/receipt`), sessionId, slot, session.planId)
+  const { session } = await loadSession(childId, sessionId, signal)
+  const expected = session.slots[slot - 1].receiptId
+  if (!expected) return null
+  const receipt = parseReceipt(await authenticatedApi(`${sessionPath(sessionId)}/slots/${slot}/receipt`, { signal }), sessionId, slot, session.planId)
+  if (receipt.receiptId !== expected) throw invalid()
+  return receipt
 }
 function parseSummary(raw: unknown): LearningSummary {
   const metrics = (value: unknown) => Array.isArray(value) && value.every((entry) => isObject(entry) && typeof entry.key === 'string' && integer(entry.count))
@@ -84,9 +93,9 @@ export function periodQuery(from: string, to: string) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 366 * 86_400_000) throw new ApiFailure('INVALID_PERIOD', 422)
   return `?from=${encodeURIComponent(new Date(start).toISOString())}&to=${encodeURIComponent(new Date(end).toISOString())}`
 }
-export async function loadRecords(childId: string, cursor: string | undefined, period: string) {
-  const child = await learningChild(childId)
-  const [records, summary] = await Promise.all([authenticatedApi(`${childPath(childId)}/learning-records${query(cursor)}`), authenticatedApi(`${childPath(childId)}/learning-summary${period}`)])
+export async function loadRecords(childId: string, cursor: string | undefined, period: string, signal?: AbortSignal) {
+  const child = await learningChild(childId, signal)
+  const [records, summary] = await Promise.all([authenticatedApi(`${childPath(childId)}/learning-records${query(cursor)}`, { signal }), authenticatedApi(`${childPath(childId)}/learning-summary${period}`, { signal })])
   return { child, ...learningPage(records, childId, result), summary: parseSummary(summary) }
 }
 export function needsLearningReload(error: unknown) { return error instanceof ApiFailure && [403, 404, 409, 410].includes(error.status) }

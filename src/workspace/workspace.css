@@ -40,3 +40,4 @@
   .management-row { align-items: flex-start; flex-direction: column; }
   .action-form .row > .button { max-width: 100%; }
 }
+.resource-content:not([hidden]) { display: contents; }

@@ -13,13 +13,15 @@ export class ApiFailure extends Error {
 }
 
 const baseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
-export interface ApiOptions { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; accessToken?: string; expectedStatus?: number | readonly number[]; idempotencyKey?: string }
+export interface ApiOptions { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; accessToken?: string; expectedStatus?: number | readonly number[]; idempotencyKey?: string; signal?: AbortSignal }
 
 /** Authentication writes are deliberately never retried here. */
 export async function requestApi(path: string, options: ApiOptions = {}): Promise<unknown> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15_000)
+  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
   try {
+    signal.throwIfAborted()
     const headers = new Headers({ Accept: 'application/json' })
     if (options.body !== undefined) headers.set('Content-Type', 'application/json')
     if (options.accessToken) headers.set('Authorization', `Bearer ${options.accessToken}`)
@@ -31,12 +33,13 @@ export async function requestApi(path: string, options: ApiOptions = {}): Promis
       cache: 'no-store',
       credentials: 'omit',
       redirect: 'error',
-      signal: controller.signal,
+      signal,
     })
     let data: unknown = null
     if (response.status !== 204) {
       try { data = await response.json() } catch { /* A proxy failure may not be JSON. */ }
     }
+    signal.throwIfAborted()
     if (!response.ok) {
       const code = isObject(data) && typeof data.code === 'string' ? data.code : response.status >= 500 ? 'SERVER_UNAVAILABLE' : 'REQUEST_FAILED'
       const retryAfter = Number(response.headers.get('Retry-After'))
@@ -46,6 +49,7 @@ export async function requestApi(path: string, options: ApiOptions = {}): Promis
     if (!(Array.isArray(expected) ? expected.includes(response.status) : response.status === expected)) throw new ApiFailure('INVALID_RESPONSE')
     return data
   } catch (error) {
+    if (options.signal?.aborted) throw new ApiFailure('REQUEST_CANCELLED')
     if (error instanceof ApiFailure) throw error
     throw new ApiFailure(controller.signal.aborted ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR')
   } finally { clearTimeout(timer) }
