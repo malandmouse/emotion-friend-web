@@ -53,7 +53,7 @@ export function AuthPage({ signup = false }: { signup?: boolean }) {
     } finally { busy.current = false; setPending(false) }
   }
 
-  return <AuthLayout variant={signup ? 'signup' : 'login'}><div className="auth-form">
+  return <AuthLayout variant={signup ? 'signup' : 'login'} appearance={signup ? 'default' : 'care'}><div className="auth-form">
     <h1>{signup ? '보호자·치료사 회원가입' : '보호자·치료사 로그인'}</h1>
     <nav className="auth-switch" aria-label="계정 메뉴"><a href="#/login" aria-current={!signup ? 'page' : undefined} aria-disabled={pending || undefined} onClick={(event) => { if (pending) event.preventDefault() }}>로그인</a><a href="#/signup" aria-current={signup ? 'page' : undefined} aria-disabled={pending || undefined} onClick={(event) => { if (pending) event.preventDefault() }}>회원가입</a></nav>
     {created ? <div className="auth-created">

@@ -3,7 +3,7 @@
 @font-face { font-family: 'Pretendard'; src: url('/fonts/Pretendard-Medium.otf') format('opentype'); font-style: normal; font-weight: 500; font-display: swap; }
 @font-face { font-family: 'Pretendard'; src: url('/fonts/Pretendard-SemiBold.otf') format('opentype'); font-style: normal; font-weight: 600; font-display: swap; }
 @font-face { font-family: 'Pretendard'; src: url('/fonts/Pretendard-Bold.otf') format('opentype'); font-style: normal; font-weight: 700; font-display: swap; }
-:root { font-family: var(--font-sans); color: var(--color-text); background: var(--color-background); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; color-scheme: light; font-size: 14px; line-height: 1.6; }
+:root { font-family: var(--font-sans); color: var(--color-text); background: var(--color-background); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; color-scheme: light; font-size: calc(14px * var(--care-font-scale, 1)); line-height: 1.6; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input, select, textarea { font: inherit; }

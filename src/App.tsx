@@ -14,6 +14,7 @@ import { Workspace } from './workspace/Workspace'
 import './workspace/workspace.css'
 import './components/ui/ui.css'
 import './App.css'
+import './styles/care.css'
 
 function readPage() { return window.location.hash.replace(/^#\/?/, '') || 'account' }
 function App() {
@@ -26,7 +27,7 @@ function App() {
   }, [])
   useEffect(() => {
     const titles: Record<string, string> = { account: '내 계정', 'verify-email': '이메일 확인', overview: '개요', profile: '아동 프로필', login: '로그인', signup: '회원가입', components: '공통 컴포넌트', create: '학습 만들기', review: '콘텐츠 검토', plan: '오늘 계획', records: '학습 기록', settings: '동의·기기' }
-    const workspaceTitle = page.includes('/review') ? '콘텐츠 검토' : page.includes('/sessions') ? '학습 세션' : page.includes('/records') ? '학습 결과·기록' : '회원·아동 관리'
+    const workspaceTitle = page.includes('/dashboard') ? '보호자 대시보드' : page.includes('/review') ? '콘텐츠 검토' : page.includes('/sessions') ? '학습 세션' : page.includes('/records') ? '학습 결과·기록' : '회원·아동 관리'
     document.title = `${page.startsWith('workspace') ? workspaceTitle : titles[page] ?? '페이지 없음'} · 나의 표정 친구`
     document.getElementById('main-content')?.focus({ preventScroll: true })
   }, [page])

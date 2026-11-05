@@ -14,6 +14,10 @@ import { MembersPage } from './MembersPage'
 import { ReviewPage } from './ReviewPage'
 import { RecordsPage, SessionsPage } from './LearningPages'
 import { SessionPage } from './SessionPage'
+import { AgentPage } from './AgentPage'
+import { DevicePage } from './DevicePage'
+import { ScenarioSettingsPage, DailyEventsPage } from './ScenarioInputsPage'
+import { GuardianDashboard } from './GuardianDashboard'
 import { isActive, roleLabels } from './contracts'
 
 export function Workspace({ path }: { path: string }) {
@@ -43,6 +47,10 @@ export function Workspace({ path }: { path: string }) {
     ...(role === 'GUARDIAN' ? [{ id: 'new', label: '아동 등록', icon: 'book-plus' as const, href: '#/workspace/children/new' }] : [{ id: 'invitations', label: '받은 초대', icon: 'inbox' as const, href: '#/workspace/invitations' }]),
   ]
   if (childId && role !== 'ADMIN') {
+    if (role === 'GUARDIAN') navigation.unshift({ id: 'dashboard', label: '대시보드', icon: 'home', href: `#/workspace/children/${childId}/dashboard` })
+    if (role === 'GUARDIAN') navigation.push({ id: 'device', label: 'Unity 앱 연결', icon: 'link', href: `#/workspace/children/${childId}/device` })
+    if (role === 'GUARDIAN') navigation.push({ id: 'scenario-settings', label: 'AI 대화 설정', icon: 'profile', href: `#/workspace/children/${childId}/scenario-settings` }, { id: 'daily-events', label: '최근 경험', icon: 'calendar', href: `#/workspace/children/${childId}/daily-events` })
+    navigation.push({ id: 'agent', label: '하루 대화 제작', icon: 'book-plus', href: `#/workspace/children/${childId}/agent` })
     navigation.push({ id: 'profile', label: '아동 프로필', icon: 'profile', href: `#/workspace/children/${childId}/profile` })
     navigation.push({ id: 'review', label: '콘텐츠 검토', icon: 'clipboard-check', href: `#/workspace/children/${childId}/review` }, { id: 'sessions', label: '학습 세션', icon: 'calendar', href: `#/workspace/children/${childId}/sessions` }, { id: 'records', label: '학습 결과·기록', icon: 'chart', href: `#/workspace/children/${childId}/records` })
     if (role === 'GUARDIAN') navigation.push({ id: 'consents', label: '목적별 동의', icon: 'shield', href: `#/workspace/children/${childId}/consents` }, { id: 'connections', label: '치료사 연결', icon: 'link', href: `#/workspace/children/${childId}/connections` })
@@ -53,16 +61,24 @@ export function Workspace({ path }: { path: string }) {
   else if (section === 'invitations' && parts.length <= 1 && role === 'THERAPIST') content = <InvitationsPage />
   else if (section === 'children' && role !== 'ADMIN' && parts.length <= 1) content = <ChildrenPage member={member} />
   else if (section === 'children' && parts[1] === 'new' && parts.length === 2 && role === 'GUARDIAN') content = <NewChildPage />
+  else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'dashboard') content = <GuardianDashboard key={childId} id={childId} />
   else if (childId && parts.length <= 3 && role !== 'ADMIN' && childSection === 'profile') content = <ChildProfilePage id={childId} member={member} />
+  else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'device') content = <DevicePage key={childId} id={childId} />
+  else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'scenario-settings') content = <ScenarioSettingsPage key={childId} id={childId} />
+  else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'daily-events') content = <DailyEventsPage key={childId} id={childId} />
+  else if (childId && parts.length === 3 && role !== 'ADMIN' && childSection === 'agent') content = <AgentPage key={childId} id={childId} />
   else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'consents') content = <ConsentsPage id={childId} />
   else if (childId && parts.length === 3 && role === 'GUARDIAN' && childSection === 'connections') content = <ConnectionsPage id={childId} />
   else if (childId && parts.length === 3 && role !== 'ADMIN' && childSection === 'review') content = <ReviewPage id={childId} />
-  else if (childId && parts.length === 3 && role !== 'ADMIN' && childSection === 'records') content = <RecordsPage id={childId} />
+  else if (childId && parts.length === 3 && role !== 'ADMIN' && childSection === 'records') {
+    const date = new URLSearchParams(search).get('date') ?? ''
+    content = <RecordsPage key={`${childId}:${date}`} id={childId} initialDate={/^\d{4}-\d{2}-\d{2}$/.test(date)?date:''} />
+  }
   else if (childId && parts.length === 3 && role !== 'ADMIN' && childSection === 'sessions') content = <SessionsPage id={childId} member={member} />
   else if (childId && parts.length === 4 && role !== 'ADMIN' && childSection === 'sessions') {
     const slot = Number(new URLSearchParams(search).get('receipt'))
     content = <SessionPage id={childId} sessionId={parts[3].toLowerCase()} initialReceipt={Number.isInteger(slot) && slot >= 1 && slot <= 5 ? slot : undefined} member={member} />
   }
   else content = <Card><EmptyState title="이 화면을 사용할 수 없어요" description="현재 승인된 계정 역할과 접근 가능한 아동 범위를 확인해 주세요." action={<a className="button button--secondary" href={role === 'ADMIN' ? '#/workspace/members' : '#/workspace/children'}>사용 가능한 목록으로</a>} /></Card>
-  return <AppShell preview={false} currentPage={currentPage} navigation={navigation} childName="" roleLabel={roleLabels[role]} accountLabel={member.displayName} brandHref={role === 'ADMIN' ? '#/workspace/members' : '#/workspace/children'}>{content}</AppShell>
+  return <AppShell appearance={role === 'GUARDIAN' ? 'care' : 'default'} preview={false} currentPage={currentPage} navigation={navigation} childName="" roleLabel={roleLabels[role]} accountLabel={member.displayName} brandHref={role === 'ADMIN' ? '#/workspace/members' : '#/workspace/children'}>{content}</AppShell>
 }

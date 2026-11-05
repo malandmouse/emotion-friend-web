@@ -1,3 +1,4 @@
+import { PrototypeDashboard } from './PrototypeDashboard'
 import { useCallback, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Member } from '../auth/contracts'
@@ -40,7 +41,7 @@ export function SessionsPage({ id, member }: { id: string; member: Member }) {
   </>
 }
 
-export function RecordsPage({ id }: { id: string }) {
+export function RecordsPage({ id, initialDate = '' }: { id: string; initialDate?: string }) {
   const [cursor, setCursor] = useState<string>()
   const [period, setPeriod] = useState('')
   const [periodError, setPeriodError] = useState('')
@@ -55,6 +56,7 @@ export function RecordsPage({ id }: { id: string }) {
   return <>
     <PageHeader title={!resource.loading && resource.data ? `${resource.data.child.pseudonym}의 학습 결과·기록` : '학습 결과·기록'} description="수락된 완료 기록과 별만 표시합니다. 감정 선택을 정답률이나 진단 점수로 해석하지 않습니다." action={<Button variant="secondary" loading={resource.loading} onClick={() => void resource.reload()}>기록 새로고침</Button>} />
     <div className="stack">
+      <PrototypeDashboard id={id} initialDate={initialDate} />
       <Card title="기간별 학습 요약" description="기본 최근 30일 · 날짜 선택은 한국 시간 기준이며 시작일과 종료일을 포함합니다. 최대 366일을 조회할 수 있어요.">
         <form onSubmit={changePeriod} className="period-form"><TextField label="시작일" name="from" type="date" required /><TextField label="종료일" name="to" type="date" required /><div className="row"><Button type="submit" variant="secondary" disabled={resource.loading}>기간 적용</Button><Button variant="ghost" disabled={resource.loading} onClick={() => { setPeriod(''); setPeriodError('') }}>최근 30일</Button></div></form>
         {periodError && <Alert tone="error">{periodError}</Alert>}

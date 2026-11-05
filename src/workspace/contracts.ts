@@ -28,6 +28,7 @@ export function object<T>(value: unknown): T { if (!isObject(value)) throw new A
 export function workspaceError(error: unknown): string {
   if (!(error instanceof ApiFailure)) return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
   const messages: Record<string, string> = {
+    WORKER_UNAVAILABLE: '대화 제작 연결이 아직 설정되지 않았습니다. 서버 담당자에게 연결 설정을 확인해 주세요.',
     TOKEN_EXPIRED: '로그인 정보를 갱신했습니다. 저장하려면 같은 요청을 다시 확인해 주세요.',
     SESSION_CHANGED: '로그인 상태가 변경되었습니다. 내 계정에서 확인해 주세요.',
     CONTENT_REVOKED: '이 학습 자료의 사용이 철회되었습니다. 최신 세션 상태를 확인해 주세요.',

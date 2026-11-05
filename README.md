@@ -166,3 +166,14 @@ node scripts/verify-workspace-live.mjs
 프로덕션에서는 기존 안내대로 /api를 백엔드로 프록시하거나 API origin/CORS를 설정해야 합니다. 링크의 fragment는 웹 서버 요청 URL로 전달되지 않습니다. 메일 링크를 여는 것만으로 확인하지 않으며 ‘이메일 확인 완료’를 누르면 인증된 POST를 보냅니다. 새 메일을 요청하면 이전 링크는 무효화됩니다.
 
 검증 스크립트: scripts/verify-email.mjs. UI_BASE_URL, PLAYWRIGHT_MODULE(외부 Playwright 모듈), PLAYWRIGHT_CHANNEL(예: msedge)을 지원합니다. 합성 API를 사용하며 실제 메일은 발송하지 않습니다. 기존 scripts/verify-workspace-live.mjs도 새 링크 흐름으로 갱신했습니다.
+
+## 2026-11-05 foundation 이관 추가분
+
+- 기준 웹 main d7c15059 / 백엔드 feat/backend-foundation b4391cd9.
+- `/#/workspace/children/{childId}/agent`: 하루 5편 MOCK 제작 요청·상태·요약 검토 연결. 실제 GPT 호출 없음.
+- `/#/workspace/children/{childId}/device`: 관리 보호자의 일회용 Unity 연결 코드. 최근 재인증이 필요할 수 있습니다.
+- Agent 토큰/제공자 키를 VITE 변수에 넣지 않습니다. 브라우저는 foundation 성인 인증만 사용합니다.
+- 개발 API는 기존 `EF_API_TARGET`, `VITE_API_BASE_URL` 설정을 따릅니다. 기본 `/api/v1`.
+- `vercel.json`에는 팀의 기존 Render rewrite가 보존되어 있습니다. 배포 담당자가 대상 환경을 확인해야 합니다. 이번 작업에서 배포하지 않았습니다.
+- 원고 요약 확인은 발행이 아닙니다. 새 Agent 원고는 의존 자산이 미연결인 DRAFT이며, 실제 아동 제공은 별도 기존 foundation 발행 요건을 만족해야 합니다.
+- 정확한 lockfile로 `npm ci && npm run build && npm run lint`를 직접 검사한 뒤 통합하세요. 이번 환경에서는 기존 설치 React19.2/TS5.9/Vite7로 보조 타입 검사/번들링만 확인했습니다.

@@ -34,9 +34,9 @@ function readSaved(): SavedSession | null {
   return null
 }
 
-function withSessionLock<T>(action: () => Promise<T>): Promise<T> {
+async function withSessionLock<T>(action: () => Promise<T>): Promise<T> {
   // Web Locks also serialize refreshes between tabs sharing the persistent session.
-  if (navigator.locks) return navigator.locks.request(LOCK_NAME, action)
+  if (navigator.locks) return await navigator.locks.request(LOCK_NAME, action)
   const next = localQueue.then(action, action)
   localQueue = next.then(() => undefined, () => undefined)
   return next
