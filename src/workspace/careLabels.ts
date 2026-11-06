@@ -1,0 +1,3 @@
+export const placeNames: Record<string, string> = { Home: '집', Class: '교실', Park: '공원', Traffic: '교통·도로', School: '학교', Mall: '쇼핑몰', Canteen: '식당·급식' }
+export const dayStateNames: Record<string, string> = { NOT_PREPARED: '이야기 준비 전', GENERATING: '이야기 제작 중', PENDING_APPROVAL: '보호자 확인 대기', MEDIA_PREPARING: '목소리 준비 중', READY: '학습 준비 완료', IN_PROGRESS: '학습 중', COMPLETED: '오늘 학습 완료' }
+export const goalNames: Record<string, string> = { EMOTION_CONTEXT: '상황에서 감정 알아차리기', EMOTION_CAUSE: '감정의 이유 이해하기', SELF_FEELING: '내 마음 표현하기', SELF_CAUSE: '내 감정의 이유 말하기', DIFFERENT_FEELINGS: '서로 다른 마음 이해하기', SIMILAR_EMOTIONS: '비슷한 감정 구별하기', INTENSITY_MIXED: '감정의 세기·섞임 표현하기', THOUGHT_WISH: '내 생각·바람 표현하기' }
